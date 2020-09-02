@@ -7,7 +7,7 @@ const ses = new aws.SES({region: 'us-east-1'});
 exports.handler = (event, context, callback) => {
   // Direct URL to the raw mailOptions JSON file 
   // Could/should store URL in AWS environment variables for each individual function
-  let url = "https://raw.githubusercontent.com/redpillanalytics/email-repo/master/mailOptions.json" // Can store this in Lambda function env variables
+  let url = "https://raw.githubusercontent.com/RedPillAnalytics/aws-lambda/master/mailOptions.example.json?token=AC44LDKOJ7OTD6GEZB6F7627LFBP4" // Can store this in Lambda function env variables
 
   let settings = {method: 'GET'}
 
