@@ -2,7 +2,7 @@
   "from": "kitto.khr@gmail.com",
   "to": ["kitto.khr@gmail.com"],
   "subject": "Report for X",
-  "html": "`This is an automated email. Attached is a report for scenario X`",
+  "html": "This is an automated email. Attached is a report for scenario X",
   "filename": "package.json",
   "path": "https://raw.githubusercontent.com/RedPillAnalytics/aws-lambda/master/package.json?token=AC44LDLBHCVLCUEDEPEZNB27LFBFQ"
 }
