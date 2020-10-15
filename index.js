@@ -1,39 +1,54 @@
+require('dotenv').config();
 const aws = require('aws-sdk');
 const nodemailer = require("nodemailer");
-const https = require('https');
 
 const ses = new aws.SES({region: 'us-east-1'});
+const s3 = new aws.S3();
+
+
+function getS3File(bucket, key) {
+  return new Promise(function(resolve, reject) {
+      s3.getObject(
+          {
+              Bucket: bucket,
+              Key: key
+          },
+          function (err, data) {
+              if (err) return reject(err);
+              else return resolve(data);
+          }
+      );
+  })
+}
 
 exports.handler = (event, context, callback) => {
-  // Direct URL to the raw mailOptions JSON file 
-  // Could/should store URL in AWS environment variables for each individual function
-  let body = []
-  let url = "https://raw.githubusercontent.com/RedPillAnalytics/aws-lambda/master/mailOptions.example.json?token=AC44LDKOJ7OTD6GEZB6F7627LFBP4"
+  
+  const env_bucket = process.env.CONFIG_BUCKET
+  const env_object = process.env.CONFIG_OBJECT
+  
+  const fileBucket = event.Records[0].s3.bucket.name
+  const fileObject = event.Records[0].s3.object.key
+  
+  getS3File(env_bucket, env_object).then (function (fileData) {
+    let mailInfo = JSON.parse(fileData.Body)
+    const {from, subject, html, to, filename, path} = mailInfo
 
-  // GET mailOptions from repo and construct the email from those options
-  // Could do some error checking in this area using the event/context return values
-  //   could compare against the file uploaded to S3 to the name of the repo to ensure
-  //   we get the right file sent
-  https.request(url, res => {
-    res.on('data', chunk => body.push(chunk))
-    res.on('end', () => {
-      let mailInfo = JSON.parse(Buffer.concat(body))
-      const {from, subject, html, to, filename, path} = mailInfo
-
+    getS3File(fileBucket, fileObject).then(function (reportData) {
+      const contentBody = reportData.Body
       const mailOptions = {
         from: from,
         to: to,
         subject: subject,
-        html: html,
+        html: html, //`<p>${env_bucket} ${env_object}</p>`,
         attachments: [
           {
-            filename: filename,
-            path: path
+            filename: "report.csv",
+            content: contentBody
           }
         ]
       };
-  
-        // Initialize Nodemailer SES transporter
+
+      // Initialize Nodemailer SES transporter
       const transporter = nodemailer.createTransport({
         SES: ses
       });
@@ -48,6 +63,6 @@ exports.handler = (event, context, callback) => {
           callback();
         }
       });
-    })
-  }).end()
+   })
+  })
 };
