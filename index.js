@@ -3,66 +3,78 @@ const aws = require('aws-sdk');
 const nodemailer = require("nodemailer");
 
 const ses = new aws.SES({region: 'us-east-1'});
+const dynamo = new aws.DynamoDB.DocumentClient();
 const s3 = new aws.S3();
 
-
-function getS3File(bucket, key) {
-  return new Promise(function(resolve, reject) {
-      s3.getObject(
-          {
-              Bucket: bucket,
-              Key: key
-          },
-          function (err, data) {
-              if (err) return reject(err);
-              else return resolve(data);
-          }
-      );
-  })
+/**
+ * Retrieves the S3 report object that triggered the Lambda function and allows the code to store it in a variable
+ *  to use as an email attachment option.
+ * 
+ * @param {string} bucket The bucket that contains the S3 report object.
+ * @param {string} key The key of the S3 report object.
+ * @return Returns the file body in a buffer 
+ */
+async function downloadFromS3(bucket, key) {
+  const file = await s3.getObject({Bucket: bucket, Key: key}).promise()
+  return file.Body
 }
 
-exports.handler = (event, context, callback) => {
-  
-  const env_bucket = process.env.CONFIG_BUCKET
-  const env_object = process.env.CONFIG_OBJECT
+exports.handler = async (event, context, callback) => {
   
   const fileBucket = event.Records[0].s3.bucket.name
   const fileObject = event.Records[0].s3.object.key
-  
-  getS3File(env_bucket, env_object).then (function (fileData) {
-    let mailInfo = JSON.parse(fileData.Body)
-    const {from, subject, html, to, filename, path} = mailInfo
 
-    getS3File(fileBucket, fileObject).then(function (reportData) {
-      const contentBody = reportData.Body
+  /**
+   * DynamoDB parameters that will be used to retrieve email configurations containing
+   *  information about email specifics (can/maybe should store these in environment variables)
+   * 
+   * @param {string} table The table that contains the email configurations.
+   * @param {string} trigger_item The specific item in the table to get email configurations.
+   */
+  const table = process.env.TABLE
+  const trigger_item = process.env.TRIGGER
+
+  const params = {
+      TableName: table,
+      Key: {
+          report: trigger_item
+      }
+  }
+
+  try {
+    
+    let attachment = await downloadFromS3(fileBucket, fileObject)
+    let data = await dynamo.get(params).promise()
+
+    if (data) {
+      let mailInfo = data.Item.mailInfo
+      const {from, subject, html, to, filename} = mailInfo
+      
       const mailOptions = {
         from: from,
         to: to,
         subject: subject,
-        html: html, //`<p>${env_bucket} ${env_object}</p>`,
+        html: html,
         attachments: [
           {
-            filename: "report.csv",
-            content: contentBody
+            filename: filename,
+            content: attachment
           }
         ]
       };
-
-      // Initialize Nodemailer SES transporter
+      
+      /**
+       * Initialize the Nodemailer transporter with a configuration to use an instance of SES
+       */
       const transporter = nodemailer.createTransport({
         SES: ses
       });
-  
-        // Send email and log messages for error checking
-      transporter.sendMail(mailOptions, (error, info) => {
-        if (error) {
-          console.log("Error sending email");
-          callback(error);
-        } else {
-          console.log("Email sent successfully");
-          callback();
-        }
-      });
-   })
-  })
+      
+      let info = await transporter.sendMail(mailOptions)
+      
+      console.log(`Message sent: ${info.messageId}`)
+    }
+  } catch (err) {
+      console.error('Unable to read item. Error JSON:', JSON.stringify(err, null, 2));
+  }
 };
